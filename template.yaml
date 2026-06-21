@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  AI Symptom Checker API — FastAPI on Lambda behind HTTP API Gateway,
+  with a DynamoDB table for assessment history.
+
+Parameters:
+  AnthropicApiKey:
+    Type: String
+    NoEcho: true
+    Description: Anthropic API key (passed at deploy time, never committed)
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: python3.13
+
+Resources:
+  SymptomCheckerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.main.handler
+      Environment:
+        Variables:
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
+          DYNAMODB_TABLE_NAME: !Ref ChecksTable
+          # AWS_REGION is provided automatically by the Lambda runtime
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ChecksTable
+      Events:
+        ApiEvents:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+
+  ChecksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: symptom-checks
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: check_id
+          AttributeType: S
+        - AttributeName: entity
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: check_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: by-date
+          KeySchema:
+            - AttributeName: entity
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the deployed API
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  TableName:
+    Description: DynamoDB table storing assessment history
+    Value: !Ref ChecksTable
