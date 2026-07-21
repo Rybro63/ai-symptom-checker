@@ -1,9 +1,9 @@
-"""DynamoDB persistence for symptom check records.
+"""DynamoDB persistence for symptom check records (per-user).
 
-Table design (single-table, simple):
+Table design (single-table):
   PK: check_id (string)
-  GSI "by-date": PK = entity (constant "CHECK"), SK = created_at
-    -> enables reverse-chronological history listing.
+  GSI "by-date": PK = entity ("USER#<user_id>"), SK = created_at
+    -> enables per-user, reverse-chronological history listing.
 """
 import json
 from typing import Optional
@@ -14,7 +14,9 @@ from boto3.dynamodb.conditions import Key
 from .config import get_settings
 from .models import SymptomCheckRecord
 
-_ENTITY = "CHECK"
+
+def _entity(user_id: str) -> str:
+    return f"USER#{user_id}"
 
 
 def _table():
@@ -23,11 +25,11 @@ def _table():
     return dynamodb.Table(settings.dynamodb_table_name)
 
 
-def save_check(record: SymptomCheckRecord) -> None:
-    """Persist a completed symptom check."""
+def save_check(record: SymptomCheckRecord, user_id: str) -> None:
+    """Persist a completed symptom check owned by user_id."""
     item = {
         "check_id": record.check_id,
-        "entity": _ENTITY,
+        "entity": _entity(user_id),
         "created_at": record.created_at,
         # Store nested models as JSON strings to avoid float/Decimal friction
         "request": record.request.model_dump_json(),
@@ -45,31 +47,33 @@ def _item_to_record(item: dict) -> SymptomCheckRecord:
     )
 
 
-def get_check(check_id: str) -> Optional[SymptomCheckRecord]:
-    """Fetch a single check by id, or None if not found."""
+def get_check(check_id: str, user_id: str) -> Optional[SymptomCheckRecord]:
+    """Fetch a single check by id if it belongs to user_id, else None.
+
+    Ownership is enforced here: a valid check_id belonging to another user
+    returns None (surfacing as 404), never another user's data.
+    """
     resp = _table().get_item(Key={"check_id": check_id})
     item = resp.get("Item")
-    return _item_to_record(item) if item else None
+    if not item or item.get("entity") != _entity(user_id):
+        return None
+    return _item_to_record(item)
 
 
 def list_checks(
-    limit: int = 20, cursor: Optional[str] = None
+    user_id: str, limit: int = 20, cursor: Optional[str] = None
 ) -> tuple[list[SymptomCheckRecord], Optional[str]]:
-    """List checks newest-first with cursor-based pagination.
-
-    The cursor is an opaque JSON string produced by a previous call; pass it
-    back unchanged to fetch the next page.
-    """
+    """List user_id's checks newest-first with cursor-based pagination."""
     kwargs = {
         "IndexName": "by-date",
-        "KeyConditionExpression": Key("entity").eq(_ENTITY),
+        "KeyConditionExpression": Key("entity").eq(_entity(user_id)),
         "ScanIndexForward": False,  # newest first
         "Limit": limit,
     }
     if cursor:
         start_key = json.loads(cursor)
         kwargs["ExclusiveStartKey"] = {
-            "entity": _ENTITY,
+            "entity": _entity(user_id),
             "created_at": start_key["created_at"],
             "check_id": start_key["check_id"],
         }

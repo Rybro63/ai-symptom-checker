@@ -42,7 +42,11 @@ Answer the prompts:
 - **SymptomCheckerFunction has no authentication. Is this okay?** `y` (it's a demo API; see Hardening below)
 - **Save arguments to configuration file:** `y` — future deploys are just `sam deploy`
 
-When it finishes, the **Outputs** section prints your `ApiUrl`. That's your live endpoint.
+When it finishes, the **Outputs** section prints four values:
+
+- `ApiUrl` — your live endpoint
+- `UserPoolId` and `UserPoolClientId` — **copy both**; the frontend needs them in its `src/config.js`
+- `TableName`
 
 > The API key is passed as a CloudFormation parameter with `NoEcho: true`, so it won't appear in console output or the template. For a production system you'd move it to AWS Secrets Manager — a good talking point in interviews.
 

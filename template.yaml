@@ -31,13 +31,71 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref ChecksTable
       Events:
-        ApiEvents:
+        PublicHealth:
           Type: HttpApi
           Properties:
             ApiId: !Ref HttpApi
+            Path: /health
+            Method: GET
+        PublicDocs:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /docs
+            Method: GET
+        PublicOpenApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /openapi.json
+            Method: GET
+        ProtectedApi:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/{proxy+}
+            Method: ANY
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   HttpApi:
     Type: AWS::Serverless::HttpApi
+    Properties:
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience:
+                - !Ref UserPoolClient
+            IdentitySource: $request.header.Authorization
+
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: symptom-checker-users
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireUppercase: false
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: symptom-checker-web
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
 
   ChecksTable:
     Type: AWS::DynamoDB::Table
@@ -71,3 +129,9 @@ Outputs:
   TableName:
     Description: DynamoDB table storing assessment history
     Value: !Ref ChecksTable
+  UserPoolId:
+    Description: Cognito User Pool ID (needed by the frontend)
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Description: Cognito App Client ID (needed by the frontend)
+    Value: !Ref UserPoolClient

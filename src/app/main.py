@@ -9,11 +9,12 @@ Endpoints:
 import logging
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from . import db
+from .auth import get_current_user_id
 from .claude_client import AnalysisError, analyze_symptoms
 from .models import (
     HistoryResponse,
@@ -56,7 +57,10 @@ def health() -> dict:
     status_code=201,
     tags=["checks"],
 )
-def create_check(payload: SymptomCheckRequest) -> SymptomCheckResponse:
+def create_check(
+    payload: SymptomCheckRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> SymptomCheckResponse:
     """Run an AI-powered triage assessment for the given symptoms."""
     try:
         result = analyze_symptoms(payload)
@@ -67,7 +71,7 @@ def create_check(payload: SymptomCheckRequest) -> SymptomCheckResponse:
         ) from exc
 
     record = SymptomCheckRecord(request=payload, result=result)
-    db.save_check(record)
+    db.save_check(record, user_id)
     logger.info(
         "Saved check %s (triage=%s, low_confidence=%s)",
         record.check_id,
@@ -78,9 +82,12 @@ def create_check(payload: SymptomCheckRequest) -> SymptomCheckResponse:
 
 
 @app.get("/v1/checks/{check_id}", response_model=SymptomCheckRecord, tags=["checks"])
-def get_check(check_id: str) -> SymptomCheckRecord:
+def get_check(
+    check_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> SymptomCheckRecord:
     """Retrieve a previously completed assessment by id."""
-    record = db.get_check(check_id)
+    record = db.get_check(check_id, user_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Check not found")
     return record
@@ -90,9 +97,10 @@ def get_check(check_id: str) -> SymptomCheckRecord:
 def list_checks(
     limit: int = Query(20, ge=1, le=100),
     cursor: Optional[str] = Query(None, description="Opaque pagination cursor"),
+    user_id: str = Depends(get_current_user_id),
 ) -> HistoryResponse:
     """List past assessments, newest first."""
-    records, next_cursor = db.list_checks(limit=limit, cursor=cursor)
+    records, next_cursor = db.list_checks(user_id, limit=limit, cursor=cursor)
     return HistoryResponse(
         items=records, count=len(records), last_evaluated_key=next_cursor
     )

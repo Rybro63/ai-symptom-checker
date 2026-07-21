@@ -110,6 +110,31 @@ def test_list_checks_newest_first_and_paginated(dynamo_table, mock_claude):
     assert seen == set(ids)
 
 
+def test_unauthenticated_request_is_rejected(dynamo_table):
+    """Without auth claims (no override), protected endpoints return 401."""
+    from src.app.main import app
+    from src.app.auth import get_current_user_id
+
+    app.dependency_overrides.pop(get_current_user_id, None)
+    resp = client.get("/v1/checks")
+    assert resp.status_code == 401
+
+
+def test_users_cannot_see_each_others_checks(dynamo_table, mock_claude):
+    """A check created by one user must be invisible to another."""
+    from src.app.main import app
+    from src.app.auth import get_current_user_id
+
+    created = client.post("/v1/checks", json=VALID_PAYLOAD).json()
+    check_id = created["check_id"]
+
+    # Switch identity to a different user
+    app.dependency_overrides[get_current_user_id] = lambda: fx.OTHER_USER
+
+    assert client.get(f"/v1/checks/{check_id}").status_code == 404
+    assert client.get("/v1/checks").json()["count"] == 0
+
+
 def test_claude_garbage_output_returns_502(dynamo_table):
     from unittest.mock import MagicMock, patch
 

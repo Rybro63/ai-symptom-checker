@@ -20,6 +20,10 @@ Client ──> API Gateway (HTTP API) ──> Lambda (FastAPI via Mangum) ──
 - **Single-table DynamoDB design** — `check_id` partition key with a `by-date` GSI enabling newest-first, cursor-paginated history queries without scans.
 - **Fully serverless & pay-per-use** — Lambda + HTTP API Gateway + on-demand DynamoDB; idle cost is ~$0.
 
+## Authentication
+
+All `/v1/*` endpoints require a **Cognito JWT** (`Authorization: Bearer <id_token>`). API Gateway's JWT authorizer validates tokens before Lambda is invoked; the app then scopes every read/write to the authenticated user's `sub`, so each user sees only their own history. `/health` and `/docs` remain public.
+
 ## API
 
 | Method | Path | Description |

@@ -105,6 +105,21 @@ LOW_CONFIDENCE_EMERGENCY_PAYLOAD = {
 }
 
 
+TEST_USER = "test-user-sub-1234"
+OTHER_USER = "other-user-sub-5678"
+
+
+@pytest.fixture(autouse=True)
+def as_test_user():
+    """Authenticate all requests as TEST_USER by overriding the auth dependency."""
+    from src.app.main import app
+    from src.app.auth import get_current_user_id
+
+    app.dependency_overrides[get_current_user_id] = lambda: TEST_USER
+    yield
+    app.dependency_overrides.clear()
+
+
 @pytest.fixture
 def mock_claude(request):
     """Patch the Anthropic client to return a canned payload.
