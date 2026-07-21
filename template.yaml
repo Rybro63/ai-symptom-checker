@@ -49,18 +49,36 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /openapi.json
             Method: GET
-        ProtectedApi:
+        ProtectedGet:
           Type: HttpApi
           Properties:
             ApiId: !Ref HttpApi
             Path: /v1/{proxy+}
-            Method: ANY
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+        ProtectedPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /v1/{proxy+}
+            Method: POST
             Auth:
               Authorizer: CognitoAuthorizer
 
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
       Auth:
         Authorizers:
           CognitoAuthorizer:
@@ -69,7 +87,6 @@ Resources:
               audience:
                 - !Ref UserPoolClient
             IdentitySource: $request.header.Authorization
-
   UserPool:
     Type: AWS::Cognito::UserPool
     Properties:
